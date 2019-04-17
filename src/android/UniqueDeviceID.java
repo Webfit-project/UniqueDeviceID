@@ -9,6 +9,7 @@ import org.json.JSONException;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.provider.Settings.Secure;
 import android.telephony.TelephonyManager;
 import android.util.Log;
@@ -26,21 +27,8 @@ public class UniqueDeviceID extends CordovaPlugin {
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
         this.callbackContext = callbackContext;
-        try {
-            if (action.equals("get")) {
-                if(this.hasPermission(permission)){
-                    getDeviceId();
-                }else{
-                    this.requestPermission(this, REQUEST_READ_PHONE_STATE, permission);
-                }
-            }else {
-                this.callbackContext.error("Invalid action");
-                return false;
-            }
-        }catch(Exception e ) {
-            this.callbackContext.error("Exception occurred: ".concat(e.getMessage()));
-            return false;
-        }
+
+        getDeviceId();
         return true;
 
     }
@@ -53,36 +41,36 @@ public class UniqueDeviceID extends CordovaPlugin {
     }
 
     protected void getDeviceId(){
+
+        Context context = cordova.getActivity().getApplicationContext();
+        String androidID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
+        String serialNumber;
+
         try {
-            Context context = cordova.getActivity().getApplicationContext();
-            TelephonyManager tm = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+            Class<?> c = Class.forName("android.os.SystemProperties");
+            Method get = c.getMethod("get", String.class);
 
-            String uuid;
-            String androidID = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
-            String deviceID = tm.getDeviceId();
-            String simID = tm.getSimSerialNumber();
+            serialNumber = (String) get.invoke(c, "gsm.sn1");
+            if (serialNumber.equals(""))
+                serialNumber = (String) get.invoke(c, "ril.serialnumber");
+            if (serialNumber.equals(""))
+                serialNumber = (String) get.invoke(c, "ro.serialno");
+            if (serialNumber.equals(""))
+                serialNumber = (String) get.invoke(c, "sys.serialnumber");
+            if (serialNumber.equals(""))
+                serialNumber = Build.SERIAL;
 
-            if ("9774d56d682e549c".equals(androidID) || androidID == null) {
-                androidID = "";
-            }
-
-            if (deviceID == null) {
-                deviceID = "";
-            }
-
-            if (simID == null) {
-                simID = "";
-            }
-
-            uuid = androidID + deviceID + simID;
-            uuid = String.format("%32s", uuid).replace(' ', '0');
-            uuid = uuid.substring(0, 32);
-            uuid = uuid.replaceAll("(\\w{8})(\\w{4})(\\w{4})(\\w{4})(\\w{12})", "$1-$2-$3-$4-$5");
-
-            this.callbackContext.success(uuid);
-        }catch(Exception e ) {
-            this.callbackContext.error("Exception occurred: ".concat(e.getMessage()));
+            // If none of the methods above worked
+            if (serialNumber.equals(""))
+                serialNumber = null;
+        } catch (Exception e) {
+            e.printStackTrace();
+            serialNumber = null;
         }
+
+        serialNumber = "{serial:'"+serialNumber+"',uid:'"+androidID+"'}";
+
+        this.callbackContext.success(serialNumber);
     }
 
     private boolean hasPermission(String permission) throws Exception{
